@@ -291,9 +291,17 @@ tbody td:first-child{padding-left:0}
   }
 
   function parseCSV(raw) {
-    var lines = splitLines(raw.trim());
+    // Google sometimes merges the first rows together — split on the header marker first
+    var headerMarker = 'Application Type';
+    var markerIdx = raw.indexOf(headerMarker);
+    if (markerIdx === -1) return [];
+    // Find the start of the line containing the header
+    var lineStart = markerIdx;
+    while (lineStart > 0 && raw.charAt(lineStart - 1) !== '\n' && raw.charAt(lineStart - 1) !== '\r') lineStart--;
+    var cleanRaw = raw.substring(lineStart);
+    var lines = splitLines(cleanRaw.trim());
     var hi = -1;
-    for (var i = 0; i < Math.min(lines.length, 8); i++) {
+    for (var i = 0; i < Math.min(lines.length, 4); i++) {
       var cells = parseLine(lines[i]);
       var hasApp = false, hasSt = false;
       for (var c = 0; c < cells.length; c++) {
