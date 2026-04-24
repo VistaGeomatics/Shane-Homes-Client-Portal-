@@ -225,9 +225,9 @@ tbody td:first-child{padding-left:0}
   function statusClass(s) {
     var v = (s||'').toLowerCase().trim();
     if (v === 'pre-application' || v.indexOf('pre-app') === 0) return 's-pre';
-    if (v.indexOf('application p') !== -1)                     return 's-apppending';
+    if (v.indexOf('application c') !== -1)                     return 's-apppending';
     if (v === 'approved')                                       return 's-approved';
-    if (v.indexOf('endorsement p') !== -1)                     return 's-endpending';
+    if (v.indexOf('endorsement c') !== -1)                     return 's-endpending';
     if (v === 'endorsed')                                       return 's-endorsed';
     if (v.indexOf('land title') !== -1 || v.charAt(0) === '@') return 's-landtitles';
     if (v.indexOf('register') !== -1)                          return 's-registered';
