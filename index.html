@@ -427,7 +427,10 @@ tbody td:first-child{padding-left:0}
       })
       .then(function(text) {
         if (text.trim().charAt(0) === '<') throw new Error('ACCESS_DENIED');
+        console.log('[Portal Debug] Raw CSV for ' + name + ' (first 500 chars):', text.substring(0, 500));
+        console.log('[Portal Debug] Total CSV length:', text.length);
         var rows = parseCSV(text);
+        console.log('[Portal Debug] Parsed rows:', rows.length, rows);
         cache[name] = rows;
         renderTable(rows, name);
         var tab = document.querySelector('.nav-tab[data-project="' + name + '"]');
