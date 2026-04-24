@@ -274,15 +274,19 @@ tbody td:first-child{padding-left:0}
     for (var i = 0; i < line.length; i++) {
       var ch = line.charAt(i);
       if (ch === '"') {
-        inQ = !inQ;
+        if (inQ && i + 1 < line.length && line.charAt(i + 1) === '"') {
+          cur += '"'; i++;
+        } else {
+          inQ = !inQ;
+        }
       } else if (ch === ',' && !inQ) {
-        cols.push(cur.trim().replace(/^"|"$/g, ''));
+        cols.push(cur.trim());
         cur = '';
       } else {
         cur += ch;
       }
     }
-    cols.push(cur.trim().replace(/^"|"$/g, ''));
+    cols.push(cur.trim());
     return cols;
   }
 
