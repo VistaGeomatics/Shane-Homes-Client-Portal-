@@ -291,15 +291,22 @@ tbody td:first-child{padding-left:0}
   }
 
   function parseCSV(raw) {
-    // Google sometimes merges the first rows together — split on the header marker first
-    var headerMarker = 'Application Type';
-    var markerIdx = raw.indexOf(headerMarker);
-    if (markerIdx === -1) return [];
-    // Find the start of the line containing the header
-    var lineStart = markerIdx;
-    while (lineStart > 0 && raw.charAt(lineStart - 1) !== '\n' && raw.charAt(lineStart - 1) !== '\r') lineStart--;
-    var cleanRaw = raw.substring(lineStart);
-    var lines = splitLines(cleanRaw.trim());
+    // Google sometimes merges preamble rows with the header row — force a clean split
+    // Find "Application Type" as the start of a CSV field (either at line start or after a newline)
+    var cleaned = raw;
+    var markerIdx = raw.search(/(?:^|\n|\r)Application Type[,\r\n]/m);
+    if (markerIdx === -1) {
+      // It may be buried inside a quoted merged cell — inject a newline before it
+      var buried = raw.indexOf('Application Type,');
+      if (buried === -1) return [];
+      cleaned = raw.substring(0, buried).replace(/[^\n]*$/, '') + '\n' + raw.substring(buried);
+    } else {
+      // Trim everything before the header line
+      var lineStart = markerIdx;
+      if (cleaned.charAt(lineStart) === '\n' || cleaned.charAt(lineStart) === '\r') lineStart++;
+      cleaned = cleaned.substring(lineStart);
+    }
+    var lines = splitLines(cleaned.trim());
     var hi = -1;
     for (var i = 0; i < Math.min(lines.length, 4); i++) {
       var cells = parseLine(lines[i]);
