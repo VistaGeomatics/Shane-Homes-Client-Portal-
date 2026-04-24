@@ -252,66 +252,44 @@ tbody td:first-child{padding-left:0}
     return 'c-na';
   }
 
-  // ── Fetch using Google Sheets JSON export (gviz/tq?tqx=out:json) ──────────
-  // This endpoint is more reliable than the CSV one for GitHub Pages
+  // ── Fetch via JSONP — bypasses CORS on GitHub Pages ─────────────────────────
+  // Google's gviz endpoint supports JSONP: wraps response in a named callback
   function fetchSheet(sheetName, callback) {
-    var url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
-              '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(sheetName);
+    var cbName = '_gviz_' + Date.now() + '_' + Math.floor(Math.random()*1e6);
     var script = document.createElement('script');
-    var cbName = '__gvizCb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    var done = false;
 
     window[cbName] = function(data) {
-      try { delete window[cbName]; } catch(e) {}
-      document.head.removeChild(script);
-      if (!data || !data.table) { callback(null, 'No data returned'); return; }
+      done = true;
+      try { delete window[cbName]; } catch(e) { window[cbName] = undefined; }
+      if (script.parentNode) script.parentNode.removeChild(script);
+      if (!data || !data.table) { callback(null, 'No table in response'); return; }
       callback(data.table, null);
     };
 
     script.onerror = function() {
+      if (done) return;
+      done = true;
       try { delete window[cbName]; } catch(e) {}
-      try { document.head.removeChild(script); } catch(e) {}
-      callback(null, 'Script load failed');
+      if (script.parentNode) script.parentNode.removeChild(script);
+      callback(null, 'Failed to load sheet data. Check the sheet is publicly shared.');
     };
 
-    // Google wraps the JSON in a callback: google.visualization.Query.setResponse(...)
-    // We override that temporarily
-    var origSetResponse = null;
-    if (window.google && window.google.visualization && window.google.visualization.Query) {
-      origSetResponse = window.google.visualization.Query.setResponse;
-    }
-    // Use tqx=out:json with a named handler
-    url += '&tqx=out:json;reqId:' + cbName.replace(/[^a-z0-9]/gi,'');
+    // tqx=out:json;handler:CBNAME  tells Google to call window.CBNAME(data)
+    script.src = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
+      '/gviz/tq?tqx=out:json;handler:' + cbName +
+      '&sheet=' + encodeURIComponent(sheetName);
 
-    // Actually use the simpler approach: fetch as text and parse manually
-    try { document.head.removeChild(script); } catch(e) {}
+    document.head.appendChild(script);
 
-    // Use fetch() with no-cors mode won't work, so use XMLHttpRequest with a proxy trick
-    // Best approach: use the JSON endpoint directly
-    var xhr = new XMLHttpRequest();
-    var jsonUrl = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
-                  '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(sheetName);
-    xhr.open('GET', jsonUrl, true);
-    xhr.onload = function() {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        var text = xhr.responseText;
-        // Google returns: /*O_o*/ google.visualization.Query.setResponse({...});
-        var match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)/);
-        if (!match) { callback(null, 'Could not parse response'); return; }
-        try {
-          var obj = JSON.parse(match[1]);
-          if (!obj.table) { callback(null, 'No table in response'); return; }
-          callback(obj.table, null);
-        } catch(e) {
-          callback(null, 'JSON parse error: ' + e.message);
-        }
-      } else if (xhr.status === 401 || xhr.status === 403) {
-        callback(null, 'ACCESS_DENIED');
-      } else {
-        callback(null, 'HTTP ' + xhr.status);
-      }
-    };
-    xhr.onerror = function() { callback(null, 'Network error'); };
-    xhr.send();
+    // Timeout after 15s
+    setTimeout(function() {
+      if (done) return;
+      done = true;
+      try { delete window[cbName]; } catch(e) {}
+      if (script.parentNode) script.parentNode.removeChild(script);
+      callback(null, 'Request timed out after 15s');
+    }, 15000);
   }
 
   function parseGvizTable(table) {
