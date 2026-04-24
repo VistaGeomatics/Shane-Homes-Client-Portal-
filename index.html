@@ -252,107 +252,49 @@ tbody td:first-child{padding-left:0}
     return 'c-na';
   }
 
-  // ── Fetch via JSONP — bypasses CORS on GitHub Pages ─────────────────────────
-  // Google's gviz endpoint supports JSONP: wraps response in a named callback
+  // ── Fetch via Google Apps Script proxy ───────────────────────────────────────
+  // PROXY_URL must be set to your deployed Apps Script web app URL
+  var PROXY_URL = 'https://script.google.com/macros/s/AKfycbxlci7AFZaKnj-1P3aMNopn7F2LqitElASU4rdNKfiFP1bVvDMRBKA8A06cvV_SxESOHQ/exec';
+
   function fetchSheet(sheetName, callback) {
-    var cbName = '_gviz_' + Date.now() + '_' + Math.floor(Math.random()*1e6);
+    if (!PROXY_URL || PROXY_URL === 'APPS_SCRIPT_URL_PLACEHOLDER') {
+      callback(null, 'SETUP_NEEDED');
+      return;
+    }
+    var url = PROXY_URL + '?sheet=' + encodeURIComponent(sheetName);
+    var cbName = '_cb_' + Date.now();
     var script = document.createElement('script');
     var done = false;
 
-    window[cbName] = function(data) {
+    window[cbName] = function(result) {
       done = true;
-      try { delete window[cbName]; } catch(e) { window[cbName] = undefined; }
+      try { delete window[cbName]; } catch(e) {}
       if (script.parentNode) script.parentNode.removeChild(script);
-      if (!data || !data.table) { callback(null, 'No table in response'); return; }
-      callback(data.table, null);
+      if (result.error) { callback(null, result.error); return; }
+      callback(result, null);
     };
 
     script.onerror = function() {
-      if (done) return;
-      done = true;
+      if (done) return; done = true;
       try { delete window[cbName]; } catch(e) {}
       if (script.parentNode) script.parentNode.removeChild(script);
-      callback(null, 'Failed to load sheet data. Check the sheet is publicly shared.');
+      callback(null, 'Failed to reach proxy. Check your Apps Script URL.');
     };
 
-    // tqx=out:json;handler:CBNAME  tells Google to call window.CBNAME(data)
-    script.src = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
-      '/gviz/tq?tqx=out:json;handler:' + cbName +
-      '&sheet=' + encodeURIComponent(sheetName);
-
+    script.src = url + '&callback=' + cbName;
     document.head.appendChild(script);
 
-    // Timeout after 15s
     setTimeout(function() {
-      if (done) return;
-      done = true;
+      if (done) return; done = true;
       try { delete window[cbName]; } catch(e) {}
       if (script.parentNode) script.parentNode.removeChild(script);
-      callback(null, 'Request timed out after 15s');
+      callback(null, 'Request timed out. Check your Apps Script URL.');
     }, 15000);
   }
 
-  function parseGvizTable(table) {
-    // Find header row (row containing "Application Type")
-    var cols = table.cols || [];
-    var rows = table.rows || [];
-
-    // Map column indices by label
-    var colMap = {};
-    for (var i = 0; i < cols.length; i++) {
-      var label = (cols[i].label || '').toLowerCase().trim();
-      colMap[label] = i;
-    }
-
-    // Helper to get col index flexibly
-    function ci(names) {
-      for (var n = 0; n < names.length; n++) {
-        if (colMap[names[n]] !== undefined) return colMap[names[n]];
-        // partial match
-        for (var key in colMap) {
-          if (key.indexOf(names[n]) === 0) return colMap[key];
-        }
-      }
-      return -1;
-    }
-
-    var ai  = ci(['application type']);
-    var ani = ci(['application number']);
-    var si  = ci(['status']);
-    var ni  = ci(['notes (client-visible)', 'notes']);
-    var coi = ci(['consents']);
-    var cci = ci(['consent comments']);
-    var pi  = ci(['registered plan number', 'registered plan']);
-    var di  = ci(['last updated']);
-
-    function cellVal(row, idx) {
-      if (idx < 0 || !row.c || !row.c[idx]) return '';
-      var c = row.c[idx];
-      if (c.v === null || c.v === undefined) return '';
-      // Use formatted value if available
-      if (c.f) return c.f;
-      return String(c.v);
-    }
-
-    var result = [];
-    for (var r = 0; r < rows.length; r++) {
-      var row = rows[r];
-      var appType = cellVal(row, ai).trim();
-      if (!appType) continue;
-      var lo = appType.toLowerCase();
-      if (lo.indexOf('update cells')!==-1 || lo.indexOf('vista geomatics')!==-1 || lo.indexOf('application type')!==-1) continue;
-      result.push({
-        appType: appType,
-        appNum:  cellVal(row, ani).trim(),
-        status:  cellVal(row, si).trim(),
-        notes:   cellVal(row, ni).trim(),
-        consents: cellVal(row, coi).trim(),
-        consentComments: cellVal(row, cci).trim(),
-        planNum: cellVal(row, pi).trim(),
-        updated: cellVal(row, di).trim()
-      });
-    }
-    return result;
+  // Proxy returns: {rows: [{appType,appNum,status,notes,consents,consentComments,planNum,updated}, ...]}
+  function parseGvizTable(result) {
+    return result.rows || [];
   }
 
   function updateStats(rows) {
@@ -425,9 +367,13 @@ tbody td:first-child{padding-left:0}
 
     fetchSheet(name, function(table, err) {
       if (err) {
-        var msg = err === 'ACCESS_DENIED'
-          ? '<p>Open the Google Sheet &rarr; <strong>Share</strong> &rarr; set General access to <strong>Anyone with the link &rarr; Viewer</strong> &rarr; click <strong>Done</strong>, then Refresh.</p>'
-          : '<p>Error: <code>'+esc(err)+'</code></p><p>Check the sheet is publicly shared and the sheet name matches exactly.</p>';
+        var msg;
+        if (err === 'SETUP_NEEDED') {
+          msg = '<p>You need to set up your Google Apps Script proxy.</p>'
+            + '<p>See the setup instructions in the README or ask your developer.</p>';
+        } else {
+          msg = '<p>Error: <code>'+esc(err)+'</code></p>';
+        }
         document.getElementById('main-content').innerHTML =
           '<div class="error-box"><h3>&#9888; Could not load '+esc(name)+'</h3>'+msg+'</div>';
         return;
